@@ -4,7 +4,7 @@ File Name: chatgpt_install.ps1
 Coder: ChatGPT-4
 Designer: kyle@mytech.today
 Created: 2023-03-29
-Updated: 2023-03-29 - Version 0.5 - added support for JSON object with multiple shortcuts loaded from a URL
+Updated: 2023-05-02 - Version 0.6 - added support for JSON object with multiple shortcuts loaded from a URL
 
 .SYNOPSIS
 Installs the ChatGPT URL shortcut(s) on the user's desktop, with options to add an icon, by downloading the icon file and creating a shortcut to a URL defined in a JSON object.
@@ -31,6 +31,10 @@ This example installs the ChatGPT URL shortcut(s) defined in the JSON object loc
 - The script uses the Invoke-WebRequest cmdlet to download the icon file.
 - The script uses the Test-Path cmdlet to check if the icons directory and the shortcut(s) already exist.
 - The script uses the Write-Verbose and Write-Error cmdlets to provide detailed information on the script execution.
+
+.EXAMPLE
+$shortcutsUrl = "https://example.com/shortcuts.json"
+Install-ChatGPTShortcut -ShortcutsUrl $shortcutsUrl
 
 #>
 
@@ -114,4 +118,37 @@ function Install-ChatGPTShortcut {
             }
 
             # Check if shortcut exists on desktop, start menu, and taskbar
-            $desktopShortcutPath = "$env
+            $desktopShortcutPath = "$env:USERPROFILE\Desktop\$name.lnk"
+            $startMenuShortcutPath = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\$name.lnk"
+            $taskbarShortcutPath = "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\$name.lnk"
+
+            if (Test-Path $desktopShortcutPath) {
+               
+                Write-Verbose "Shortcut '$name' already exists on the desktop"
+                continue
+            }
+            if (Test-Path $startMenuShortcutPath) {
+                Write-Verbose "Shortcut '$name' already exists in the start menu"
+                continue
+            }
+            if (Test-Path $taskbarShortcutPath) {
+                Write-Verbose "Shortcut '$name' already exists on the taskbar"
+                continue
+            }
+
+            # Create the shortcut on the desktop
+            New-Shortcut -Name $name -TargetPath $url -IconLocation $iconPath -IconIndex 0
+
+            # Create the shortcut in the start menu
+            New-Shortcut -Name $name -TargetPath $url -IconLocation $iconPath -IconIndex 0 -WorkingDirectory $env:USERPROFILE -Arguments "-p" | Copy-Item -Destination $startMenuShortcutPath
+
+            # Create the shortcut on the taskbar
+            New-Shortcut -Name $name -TargetPath $url -IconLocation $iconPath -IconIndex 0 | Copy-Item -Destination $taskbarShortcutPath
+        }
+    }
+    catch {
+        Write-Error "Failed to install ChatGPT shortcut: $_"
+        return
+    }
+}
+

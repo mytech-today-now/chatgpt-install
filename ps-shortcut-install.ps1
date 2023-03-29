@@ -56,8 +56,16 @@ Specifies the URL of the JSON file that contains information about the shortcuts
 [CmdletBinding()]
 param (
     [Parameter(Mandatory=$true)]
+    [ValidateNotNullOrEmpty()]
     [string]$ShortcutUrl
 )
+
+# Set error action preference to stop for explicit error handling.
+$ErrorActionPreference = "Stop"
+
+# Define log file path.
+$LogPath = Join-Path -Path $PSScriptRoot -ChildPath "log.txt"
+
 
 function New-Shortcut {
     param (
@@ -134,4 +142,18 @@ function Install-Shortcut {
     }
 }
 
-Install-Shortcut -ShortcutUrl $ShortcutUrl
+try {
+    # Main script logic goes here...
+    Install-Shortcut -ShortcutUrl $ShortcutUrl
+}
+catch {
+    # Handle any errors and log them to the log file.
+    $ErrorMessage = $_.Exception.Message
+    $ErrorTime = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    $ErrorLine = "Error occurred at line {0} in {1}" -f $_.InvocationInfo.ScriptLineNumber, $_.InvocationInfo.ScriptName
+    $ErrorDetails = "{0}`n{1}" -f $ErrorMessage, $ErrorLine
+    Write-Error $ErrorDetails
+    Add-Content -Path $LogPath -Value ("{0} : {1}" -f $ErrorTime, $ErrorDetails)
+}
+
+

@@ -54,106 +54,65 @@ Specifies the URL of the JSON file that contains information about the shortcuts
 #>
 
 [CmdletBinding()]
-param (
+Param(
     [Parameter(Mandatory=$true)]
-    [ValidateNotNullOrEmpty()]
-    [string]$ShortcutUrl
+    [string]$jsonUrl,
+    [Parameter(Mandatory=$false)]
+    [string]$logFile = ".\log.txt"
 )
 
-# Set error action preference to stop for explicit error handling.
+# Initialize log file and error handling
 $ErrorActionPreference = "Stop"
-
-# Define log file path.
-$LogPath = Join-Path -Path $PSScriptRoot -ChildPath "log.txt"
-
-
-function New-Shortcut {
-    param (
-        [Parameter(Mandatory=$true)]
-        [string]$Name,
-        [Parameter(Mandatory=$true)]
-        [string]$TargetPath,
-        [string]$Arguments = "",
-        [string]$WorkingDirectory = "",
-        [string]$IconLocation = "",
-        [int]$IconIndex = 0
-    )
-
-    $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut("$([Environment]::GetFolderPath('Desktop'))\$Name.lnk")
-    $shortcut.TargetPath = $TargetPath
-    $shortcut.Arguments = $Arguments
-    $shortcut.WorkingDirectory = $WorkingDirectory
-    $shortcut.IconLocation = $IconLocation
-    $shortcut.IconIndex = $IconIndex
-    $shortcut.Save()
-}
-
-function Install-Shortcut {
-    param (
-        [Parameter(Mandatory=$true)]
-        [string]$ShortcutUrl
-    )
-
-    try {
-        $shortcutJson = Invoke-RestMethod -Uri $ShortcutUrl -ErrorAction Stop
-    } catch {
-        Write-Error "Failed to load shortcut JSON from $ShortcutUrl. $_"
-        return
-    }
-
-    $iconsDirectory = "$([Environment]::GetFolderPath('MyDocuments'))\icons"
-    if (-not (Test-Path $iconsDirectory)) {
-        try {
-            New-Item -Path $iconsDirectory -ItemType Directory -ErrorAction Stop | Out-Null
-        } catch {
-            Write-Error "Failed to create directory $iconsDirectory. $_"
-            return
-        }
-    }
-
-    foreach ($shortcut in $shortcutJson) {
-        $name = $shortcut.Name
-        $targetPath = $shortcut.Url
-        $iconLocation = "$iconsDirectory\$name.ico"
-
-        if (-not (Test-Path "$([Environment]::GetFolderPath('Desktop'))\$name.lnk")) {
-            try {
-                Invoke-WebRequest -Uri $shortcut.Icon -OutFile $iconLocation -ErrorAction Stop
-                New-Shortcut -Name $name -TargetPath $targetPath -IconLocation $iconLocation -IconIndex 0
-            } catch {
-                Write-Error "Failed to create shortcut '$name' on desktop. $_"
-            }
-        }
-
-        if (-not (Test-Path "$([Environment]::GetFolderPath('Programs'))\$name.lnk")) {
-            try {
-                Invoke-WebRequest -Uri $shortcut.Icon -OutFile $iconLocation -ErrorAction Stop
-                New-Shortcut -Name $name -TargetPath $targetPath -IconLocation $iconLocation -IconIndex 0 | Out-Null
-                $startMenuDirectory = "$([Environment]::GetFolderPath('Programs'))\ChatGPT"
-                if (-not (Test-Path $startMenuDirectory)) {
-                    New-Item -Path $startMenuDirectory -ItemType Directory -ErrorAction Stop | Out-Null
-                }
-                Move-Item "$([Environment]::GetFolderPath('Programs'))\$name.lnk" "$startMenuDirectory\$name.lnk" -ErrorAction Stop | Out-Null
-            } catch {
-                Write-Error "Failed to create shortcut '$name' in start menu. $_"
-            }
-        }
-    }
-}
+$VerbosePreference = "Continue"
+if (Test-Path $logFile) { Remove-Item $logFile }
+$LogStream = [System.IO.StreamWriter]::new($logFile, $true)
 
 try {
-    # Main script logic goes here...
-    Install-Shortcut -ShortcutUrl $ShortcutUrl
-}
-catch {
-    # Handle any errors and log them to the log file.
-    $ErrorMessage = $_.Exception.Message
-    $ErrorTime = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    $ErrorLine = "Error occurred at line {0} in {1}" -f $_.InvocationInfo.ScriptLineNumber, $_.InvocationInfo.ScriptName
-    $ErrorDetails = "{0}`n{1}" -f $ErrorMessage, $ErrorLine
-    Write-Error $ErrorDetails
-    Add-Content -Path $LogPath -Value ("{0} : {1}" -f $ErrorTime, $ErrorDetails)
-}
+    # Retrieve JSON data from URL and convert to PowerShell object
+    $json = Invoke-RestMethod -Uri $jsonUrl -ErrorAction Stop
+    if ($json -eq $null) {
+        throw "JSON file is empty or invalid."
+    }
 
+    # Iterate over each object in the JSON array and create shortcut
+    foreach ($shortcut in $json) {
+        if ($shortcut.Name -eq $null -or $shortcut.URL -eq $null) {
+            throw "Shortcut name or URL is missing from JSON file."
+        }
 
+        # Build URL shortcut file path
+        $shortcutPath = "$([System.Environment]::GetFolderPath('Desktop'))\{0}.url" -f $shortcut.Name
+
+        # Check if shortcut already exists
+        $shortcutExists = Test-Path $shortcutPath
+
+        # Create shortcut object and set properties
+        $WshShell = New-Object -ComObject WScript.Shell
+        $shortcutObject = $WshShell.CreateShortcut($shortcutPath)
+
+        # Set shortcut properties
+        $shortcutObject.TargetPath = $shortcut.URL
+        if ($shortcut.Icon -ne $null) {
+            $shortcutObject.IconLocation = $shortcut.Icon
+        }
+        $shortcutObject.Save()
+
+        # Log success message
+        if ($shortcutExists) {
+            Write-Verbose "Shortcut '$shortcut.Name' updated."
+            $LogStream.WriteLine("$(Get-Date) - Shortcut '$shortcut.Name' updated.")
+        } else {
+            Write-Verbose "Shortcut '$shortcut.Name' created."
+            $LogStream.WriteLine("$(Get-Date) - Shortcut '$shortcut.Name' created.")
+        }
+    }
+} catch {
+    # Log error and display message
+    Write-Error $_
+    $LogStream.WriteLine("$(Get-Date) - Error: $_")
+    $LogStream.Close()
+    throw
+} finally {
+    # Close log file stream
+    $LogStream.Close()
+}

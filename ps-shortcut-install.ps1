@@ -64,7 +64,7 @@ Specifies the URL of the JSON file that contains information about the shortcuts
 [CmdletBinding()]
 Param(
     [Parameter(Mandatory=$true)]
-    [string]$jsonUrl,
+    [string]$jsonUrl = "https://insidiousmeme.com/presenta/ai/powershell/chatgpt_shortcuts.json",
     [Parameter(Mandatory=$false)]
     [string]$logFile = ".\log.txt"
 )

@@ -1,126 +1,115 @@
 <#
-    
-File Name: ps-shortcut-install.ps1
-Coder: ChatGPT-4
-Designer: kyle@mytech.today
-Created: 2023-03-29
-Updated: 2023-03-29 - Version 0.6 - added support for JSON object with multiple shortcuts loaded from a URL
-
-## SYNOPSIS
-
-`ps-shortcut-install.ps1` installs Internet shortcuts with a URL and icon specified by a JSON file.
-
-## DESCRIPTION
-
-This script installs Internet shortcuts on a user's desktop and Start menu, with a URL and icon specified by a JSON file available at a given URL. The script can be run with a URL parameter, which will be used to retrieve the JSON file with the shortcuts information. The script ensures that the icons directory is created and that the shortcuts are created only if they don't already exist in the specified locations.
-
-## EXAMPLE
-
-```bash
-.\ps-shortcut-install.ps1 -ShortcutUrl "https://domain.com/list-of-shortcuts-to-create.json"
-```
-
-This example installs the Windows URL shortcut(s) defined in the JSON object located at https://domain.com/list-of-shortcuts-to-create.json.
-
-## PARAMETER ShortcutsUrl
-
-Specifies the URL of the JSON file that contains information about the shortcuts to be installed.  The JSON object should have the following structure:
-
-- `ShortcutUrl` (required): Specifies the URL (https://domain.com/list-of-shortcuts-to-create.json) of the JSON file that contains information about the shortcuts to be installed.
-
-```json
-{
-    "Shortcuts": [
-        {
-            "Name": "ChatGPT",
-            "URL": "http://chat.openai.com/chat/",
-            "Icon": "https://insidiousmeme.com/presenta/ai/powershell/chatgpt-purple.ico"
-        },
-        {
-            "Name": "Google",
-            "URL": "https://www.google.com",
-            "Icon": "https://www.google.com/favicon.ico"
-        },
-        {
-            "Name": "Reddit",
-            "URL": "https://www.reddit.com",
-            "Icon": "https://www.redditstatic.com/desktop2x/img/favicon/apple-icon-57x57.png"
-        }
-    ]
-}
-```
-
-## NOTES
-
-- This script requires the user to have administrative privileges to create the shortcut(s) on the desktop, start menu, and taskbar, and to create the icons directory.
-- The script uses the WScript.Shell COM object to create the shortcut(s).
-- The script uses the Invoke-RestMethod cmdlet to load the JSON object from the specified URL.
-- The script uses the Invoke-WebRequest cmdlet to download the icon file.
-- The script uses the Test-Path cmdlet to check if the icons directory and the shortcut(s) already exist.
-- The script uses the Write-Verbose and Write-Error cmdlets to provide detailed information on the script execution.
-
+    File Name: windows_install.ps1
+    Coder: ChatGPT-4
+    Designer: kyle@mytech.today
+    Created: 2023-03-29
+    Updated: 2023-03-29 - Version 0.6 - added missing Name and URL property checks for shortcuts in JSON object
+                                        added support for JSON object with multiple shortcuts loaded from a URL
 #>
 
-[CmdletBinding()]
-Param(
-    [Parameter(Mandatory=$true)]
-    [string]$jsonUrl = "https://insidiousmeme.com/presenta/ai/powershell/chatgpt_shortcuts.json",
-    [Parameter(Mandatory=$false)]
-    [string]$logFile = ".\log.txt"
-)
+<#  Example usage 
+    
+    ./windows_install.ps1 ShortcutsUrl "URL"
+#>
 
-# Initialize log file and error handling
-$ErrorActionPreference = "Stop"
-$VerbosePreference = "Continue"
-if (Test-Path $logFile) { Remove-Item $logFile }
-$LogStream = [System.IO.StreamWriter]::new($logFile, $true)
+function Get-Shortcuts {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$ShortcutsUrl
+    )
 
-try {
-    # Retrieve JSON data from URL and convert to PowerShell object
-    $json = Invoke-RestMethod -Uri $jsonUrl -ErrorAction Stop
-    if ($json -eq $null) {
-        throw "JSON file is empty or invalid."
+    try {
+        return Invoke-RestMethod -Uri $ShortcutsUrl
     }
+    catch {
+        Write-Error "Failed to load shortcuts JSON: $_"
+        return $null
+    }
+}
 
-    # Iterate over each object in the JSON array and create shortcut
-    foreach ($shortcut in $json) {
-        if ($shortcut.Name -eq $null -or $shortcut.URL -eq $null) {
-            throw "Shortcut name or URL is missing from JSON file."
+function Test-ShortcutProperties {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+        [PSCustomObject]$Shortcut
+    )
+
+    process {
+        if (-not ($Shortcut.Name) -or -not ($Shortcut.URL)) {
+            Write-Error "Shortcut name or URL is missing from JSON file"
+            return $false
         }
+        return $true
+    }
+}
 
-        # Build URL shortcut file path
-        $shortcutPath = "$([System.Environment]::GetFolderPath('Desktop'))\{0}.url" -f $shortcut.Name
+function Save-Icon {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$IconUrl,
+        [Parameter(Mandatory=$true)]
+        [string]$IconPath
+    )
 
-        # Check if shortcut already exists
-        $shortcutExists = Test-Path $shortcutPath
+    try {
+        Invoke-WebRequest -Uri $IconUrl -OutFile $IconPath -ErrorAction Stop
+    }
+    catch {
+        Write-Error "Failed to download icon file: $_"
+        return $false
+    }
+    return $true
+}
 
-        # Create shortcut object and set properties
+function New-WindowsShortcut {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Name,
+        [Parameter(Mandatory=$true)]
+        [string]$Url,
+        [Parameter(Mandatory=$true)]
+        [string]$IconPath
+    )
+
+    $TargetPath = (Get-Command "iexplore.exe").Path
+
+    try {
         $WshShell = New-Object -ComObject WScript.Shell
-        $shortcutObject = $WshShell.CreateShortcut($shortcutPath)
-
-        # Set shortcut properties
-        $shortcutObject.TargetPath = $shortcut.URL
-        if ($shortcut.Icon -ne $null) {
-            $shortcutObject.IconLocation = $shortcut.Icon
-        }
-        $shortcutObject.Save()
-
-        # Log success message
-        if ($shortcutExists) {
-            Write-Verbose "Shortcut '$shortcut.Name' updated."
-            $LogStream.WriteLine("$(Get-Date) - Shortcut '$shortcut.Name' updated.")
-        } else {
-            Write-Verbose "Shortcut '$shortcut.Name' created."
-            $LogStream.WriteLine("$(Get-Date) - Shortcut '$shortcut.Name' created.")
-        }
+        $Shortcut = $WshShell.CreateShortcut("$env:USERPROFILE\Desktop\$Name.lnk")
+        $Shortcut.TargetPath = $TargetPath
+        $Shortcut.Arguments = "-k $Url"
+        $Shortcut.IconLocation = "$IconPath,0"
+        $Shortcut.Save()
+        Write-Verbose "Shortcut created on desktop: $($Shortcut.FullName)"
     }
-} catch {
-    # Log error and display message
-    Write-Error $_
-    $LogStream.WriteLine("$(Get-Date) - Error: $_")
-    $LogStream.Close()
-    throw
-} finally {
-    # Close log file stream
-    $LogStream.Close()
+    catch {
+        Write-Error "Failed to create shortcut on desktop: $_"
+        return
+    }
+}
+
+function Install-WindowsShortcuts {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$ShortcutsUrl
+    )
+
+    $IconsDirectory = "$env:USERPROFILE\myTechToday\icons"
+    if (!(Test-Path $IconsDirectory)) {
+        New-Item -ItemType Directory -Path $IconsDirectory -ErrorAction Stop | Out-Null
+    }
+
+    Get-Shortcuts -ShortcutsUrl $ShortcutsUrl |
+    Where-Object { Test-ShortcutProperties -Shortcut $_ } |
+    ForEach-Object {
+        $IconPath = "$IconsDirectory\$($_.Name).ico"
+        if (-not (Test-Path $IconPath)) {
+            Save-Icon -IconUrl $_.Icon -IconPath $IconPath
+        }
+        New-WindowsShortcut -Name $_.Name -Url $_.URL -IconPath $IconPath
+    }
 }

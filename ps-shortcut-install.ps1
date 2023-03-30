@@ -30,15 +30,23 @@ Specifies the URL of the JSON file that contains information about the shortcuts
 
 ```json
 {
-	{
-		"Name": "Shortcut Name",
-		"URL": "https://somedomain.com/thingy",
-		"Icon": "https://somedomain.com/icon.ico"
-	}, {
-		"Name": "Shortcut Name 2",
-		"URL": "https://someotherdomain.com/foobar",
-		"Icon": "https://someotherdomain.com/icon.ico"
-	}
+    "Shortcuts": [
+        {
+            "Name": "ChatGPT",
+            "URL": "http://chat.openai.com/chat/",
+            "Icon": "https://insidiousmeme.com/presenta/ai/powershell/chatgpt-purple.ico"
+        },
+        {
+            "Name": "Google",
+            "URL": "https://www.google.com",
+            "Icon": "https://www.google.com/favicon.ico"
+        },
+        {
+            "Name": "Reddit",
+            "URL": "https://www.reddit.com",
+            "Icon": "https://www.redditstatic.com/desktop2x/img/favicon/apple-icon-57x57.png"
+        }
+    ]
 }
 ```
 
